@@ -1,6 +1,6 @@
 # run example
-# py lab1.py -x 1000 -y 500 -c 15 --test
-# py lab1.py -x 1000 -y 500 -c 20 -p 50 -g 120
+# py lab1.py -x 1000 -y 500 -cr 15 --test
+# py lab1.py -x 1000 -y 500 -cr 20 -p 50 -g 120
 
 import random
 import sys
@@ -15,12 +15,13 @@ GENERATION_COUNT: int
 TEST: bool
 CITIES: list
 
-ARGS_WORDS = {"-x", "-y", "-c", "-p", "-g", "--test"}
+ARGS_WORDS = {"-x", "-y", "-c", "-cr", "-p", "-g", "--test"}
 
 IS_DEFAULT = {
     "x": True,
     "y": True,
-    "cities": True,
+    "manual_cities": True,
+    "cities_count": True,
     "population": True,
     "generation": True,
 }
@@ -30,6 +31,22 @@ BEST_BY_GENERATION_COUNT = {}
 TEST_POPULATIONS = [i * 10 for i in range(1, 11)]
 TEST_GEN_COUNTS = [2 ** i for i in range(15)]
 ABSOLUTE_BEST = {}
+
+HELP_STR = """
+USAGE: python <filename> -x 500 -y 500 [-cr 20][ -p 50 -g 100| --test]
+Arguments:
+    -x      Length of the plane
+    -y      Height of the plane
+    -cr     Count of the randomly generated cities
+    -c      Flag followed by coordinates of cities until next flag is encountered or end of the arguments (ex: -c 100,50 150,100 200,100 60,175 80,45)
+    -p      Number of cities in "population"
+    -g      Number of generations
+    --test  Flag for running the automated test ("-p" and "-g" flags are ignored). Ignored when "-c" is specified
+"""
+
+def print_help_and_halt():
+    print(HELP_STR)
+    os._exit(-1)
 
 def set_default_size():
     global MAX_X, MAX_Y, CITIES_COUNT, POPULATION_SIZE, GENERATION_COUNT, TEST
@@ -41,28 +58,34 @@ def set_default_size():
     GENERATION_COUNT = 30
     TEST = False
     
-def try_set_parameter(tag, value):
+def cities_from_coords(coords):
+    global CITIES
+    CITIES = []
+    for coord in coords:
+        CITIES.append(coord)
+    
+def try_set_parameter(flag, value):
     global MAX_X, MAX_Y, CITIES_COUNT, POPULATION_SIZE, GENERATION_COUNT
 
     try:
         value = int(value)
     except ValueError:
-        print(f"Failed to parse value for \"{tag}\"")
-        os._exit(-1)
+        print(f"ERROR: Failed to parse value for \"{flag}\"")
+        print_help_and_halt()
 
-    if tag == "-x":
+    if flag == "-x":
         MAX_X = value
         IS_DEFAULT["x"] = False
-    elif tag == "-y":
+    elif flag == "-y":
         MAX_Y = value
         IS_DEFAULT["y"] = False
-    elif tag == "-c":
+    elif flag == "-cr":
         CITIES_COUNT = value
-        IS_DEFAULT["cities"] = False
-    elif tag == "-p":
+        IS_DEFAULT["cities_count"] = False
+    elif flag == "-p":
         POPULATION_SIZE = value
         IS_DEFAULT["population"] = False
-    elif tag == "-g":
+    elif flag == "-g":
         GENERATION_COUNT = value
         IS_DEFAULT["generation"] = False
 
@@ -74,27 +97,62 @@ def parse_args():
     if argc == 1:
         return
     
+    if argc == 2 and (sys.argv[1] == "--help" or sys.argv[1] == "-h"):
+        print(HELP_STR)
+        os._exit(0)
+    
     i = 1
     while i < argc:
         if sys.argv[i] in ARGS_WORDS:
             if sys.argv[i] == "--test":
                 TEST = True
+            elif sys.argv[i] == "-c":
+                IS_DEFAULT["manual_cities"] = False
+                i += 1
+                coords = []
+                err = False
+
+                while i < argc:
+                    try:
+                        coords.append(tuple(int(x) for x in sys.argv[i].split(",")))
+                    except:
+                        if sys.argv[i] in ARGS_WORDS:
+                            i -= 1
+                        else:
+                            err = True
+                        break
+                    i += 1
+                if err:
+                    print("ERROR: Failed to parse list of coordinates after \"-c\"")
+                    os._exit(-1)
+
+                cities_from_coords(coords)
             elif i < argc - 1:        
                 try_set_parameter(sys.argv[i], sys.argv[i+1])
                 i += 1
-
         i += 1
+        
+    if not IS_DEFAULT["manual_cities"]:
+        for x, y in CITIES:
+            if x > MAX_X:
+                print("ERROR: Manually set point is beyond plane's width")
+                os._exit(-1)
+            if y > MAX_Y:
+                print("ERROR: Manually set point is beyond plane's height")
+                os._exit(-1)
     
     print("Program parameters")
     print(f"\tPlane: {MAX_X} wide{" (default)" if IS_DEFAULT["x"] else ""}, {MAX_Y} high{" (default)" if IS_DEFAULT["y"] else ""}")
-    print(f"\tCities count: {CITIES_COUNT}{" (default)" if IS_DEFAULT["cities"] else ""}")
+    if IS_DEFAULT["manual_cities"]:
+        print(f"\tCities count: {CITIES_COUNT}{" (default)" if IS_DEFAULT["cities_count"] else ""}")
+    else:
+        print(f"\tCities: {CITIES}")
     print(f"\tPopulation size: {POPULATION_SIZE}{" (default)" if IS_DEFAULT["population"] else ""}")
     print(f"\tGeneration count: {GENERATION_COUNT}{" (default)" if IS_DEFAULT["generation"] else ""}")
     print()
     
-    if POPULATION_SIZE > 2 ** (CITIES_COUNT-1):
-        print("Population size must be less then 2 to power of (Cities count - 1)")
-        os._exit(-1)
+    if POPULATION_SIZE > 2 ** ((CITIES_COUNT-1) if IS_DEFAULT["manual_cities"] else len(CITIES)-1):
+        print("ERROR: Population size must be less then 2 to power of (Cities count - 1)")
 
 #########################################################################
 #########################################################################
@@ -117,24 +175,24 @@ def calculate_route_length(route):
     
     return total
 
-def build_route(cities):
+def build_route():
     # випадково вибрати точки зі списку "cities"
-    remaining = cities[1:]
+    remaining = CITIES[1:]
     random.shuffle(remaining)
 
-    return tuple([cities[0]] + remaining + [cities[0]])
+    return tuple([CITIES[0]] + remaining + [CITIES[0]])
 
 # створити нові або додати до існуючих шляхи між містами
 def build_routes(count, routes):
     hashes = set(route["hash"] for route in routes)
     
     for _ in range(count):
-        route = build_route(CITIES)
+        route = build_route()
         route_hash = hash(route)
         
         # захист від повторних шляхів
         while route_hash in hashes:
-            route = build_route(CITIES)
+            route = build_route()
             route_hash = hash(route)
             
         hashes.update([route_hash])
@@ -208,9 +266,10 @@ def program(_population, gen_count):
     if TEST:
         print()
         print(f"Generation count: {gen_count}")
+        print(f"Population size: {len(population)}")
     else:
         print(f"Best route: {best_route["route"]}")
-    print(f"Population size: {len(population)}")
+
     print(f"Total length: {best_route["length"]:.2f}")
 
     update_test_data(gen_count, len(population), best_route["length"])
@@ -252,8 +311,9 @@ def test_program():
     print(f"\nAbsolute best{ABSOLUTE_BEST["len"]:8.2f} (generations={ABSOLUTE_BEST["generation"]}, population={ABSOLUTE_BEST["population"]})")
 
 def main():
-    global CITIES
+    global CITIES, TEST
     parse_args()
+    TEST = TEST and IS_DEFAULT["manual_cities"]
     
     # ініціювання першого покоління
     # кожен елемент списку "population" має такі поля:
@@ -262,14 +322,16 @@ def main():
     # hash - службове значення, необхідне для уникання повторних маршрутів у колекції
     initial_population = []
     
-    CITIES = generate_cities(CITIES_COUNT)
+    if IS_DEFAULT["manual_cities"]:
+        CITIES = generate_cities(CITIES_COUNT)
+
     build_routes(POPULATION_SIZE, initial_population)
     initial_population = sorted(initial_population, key=lambda x: x["length"])
 
-    if not TEST:
-        program(initial_population, GENERATION_COUNT)
-    else:
+    if TEST:
         test_program()
+    else:
+        program(initial_population, GENERATION_COUNT)
     
 
 if __name__ == "__main__":
