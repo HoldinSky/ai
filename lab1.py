@@ -38,7 +38,8 @@ Arguments:
     -x      Length of the plane
     -y      Height of the plane
     -cr     Count of the randomly generated cities
-    -c      Flag followed by coordinates of cities until next flag is encountered or end of the arguments (ex: -c 100,50 150,100 200,100 60,175 80,45)
+    -c      Flag followed by coordinates of cities until next flag is encountered or end of the arguments
+            (ex: -c 100,50 150,100 200,100 60,175 80,45)
     -p      Number of cities in "population"
     -g      Number of generations
     --test  Flag for running the automated test ("-p" and "-g" flags are ignored). Ignored when "-c" is specified
@@ -46,7 +47,7 @@ Arguments:
 
 def print_help_and_halt():
     print(HELP_STR)
-    os._exit(-1)
+    exit(-1)
 
 def set_default_size():
     global MAX_X, MAX_Y, CITIES_COUNT, POPULATION_SIZE, GENERATION_COUNT, TEST
@@ -75,11 +76,19 @@ def try_set_parameter(flag, value):
 
     if flag == "-x":
         MAX_X = value
+        if value < 100:
+            print("ERROR: Panel's width cannot be less then 100")
+            exit(-1)
         IS_DEFAULT["x"] = False
     elif flag == "-y":
         MAX_Y = value
+        if value < 100:
+            print("ERROR: Panel's height cannot be less then 100")
+            exit(-1)
         IS_DEFAULT["y"] = False
     elif flag == "-cr":
+        if not IS_DEFAULT["manual_cities"]:
+            return
         CITIES_COUNT = value
         IS_DEFAULT["cities_count"] = False
     elif flag == "-p":
@@ -99,7 +108,7 @@ def parse_args():
     
     if argc == 2 and (sys.argv[1] == "--help" or sys.argv[1] == "-h"):
         print(HELP_STR)
-        os._exit(0)
+        exit(0)
     
     i = 1
     while i < argc:
@@ -107,14 +116,21 @@ def parse_args():
             if sys.argv[i] == "--test":
                 TEST = True
             elif sys.argv[i] == "-c":
-                IS_DEFAULT["manual_cities"] = False
                 i += 1
+                if not IS_DEFAULT["cities_count"]:
+                    continue
+
+                IS_DEFAULT["manual_cities"] = False
                 coords = []
                 err = False
 
                 while i < argc:
                     try:
-                        coords.append(tuple(int(x) for x in sys.argv[i].split(",")))
+                        x, y = [int(x) for x in sys.argv[i].split(",")]
+                        if x < 0 or y < 0:
+                            print("ERROR: Point's coordinates must be greater or equal to 0")
+                            exit(-1)
+                        coords.append((x, y))
                     except:
                         if sys.argv[i] in ARGS_WORDS:
                             i -= 1
@@ -124,7 +140,7 @@ def parse_args():
                     i += 1
                 if err:
                     print("ERROR: Failed to parse list of coordinates after \"-c\"")
-                    os._exit(-1)
+                    exit(-1)
 
                 cities_from_coords(coords)
             elif i < argc - 1:        
@@ -136,10 +152,10 @@ def parse_args():
         for x, y in CITIES:
             if x > MAX_X:
                 print("ERROR: Manually set point is beyond plane's width")
-                os._exit(-1)
+                exit(-1)
             if y > MAX_Y:
                 print("ERROR: Manually set point is beyond plane's height")
-                os._exit(-1)
+                exit(-1)
     
     print("Program parameters")
     print(f"\tPlane: {MAX_X} wide{" (default)" if IS_DEFAULT["x"] else ""}, {MAX_Y} high{" (default)" if IS_DEFAULT["y"] else ""}")
@@ -153,6 +169,7 @@ def parse_args():
     
     if POPULATION_SIZE > 2 ** ((CITIES_COUNT-1) if IS_DEFAULT["manual_cities"] else len(CITIES)-1):
         print("ERROR: Population size must be less then 2 to power of (Cities count - 1)")
+        exit(-1)
 
 #########################################################################
 #########################################################################
@@ -161,7 +178,14 @@ def generate_coords(max_x, max_y):
     return (random.randint(0, max_x), random.randint(0, max_y))
 
 def generate_cities(count):
-    return [generate_coords(MAX_X, MAX_Y) for _ in range(count)]
+    cities = []
+    for _ in range(count):
+        city = generate_coords(MAX_X, MAX_Y)
+        while city in cities:
+            city = generate_coords(MAX_X, MAX_Y)
+        cities.append(city)
+
+    return cities
 
 def calculate_distance(city1, city2):
     x1, y1 = city1
