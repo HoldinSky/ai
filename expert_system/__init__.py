@@ -2,21 +2,105 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
-from constants import FONT, COOKING_TIME_OPTIONS, COOKING_SKILL_OPTIONS, MEAL_OPTIONS
+import constants as c
 import structures as st
+from expert_system.utils import set_text_value
+from utils import (sufficient_skill, extract_ingredients, extract_skill, extract_meal, extract_time, dish_from_row)
 
 DATA = pd.read_csv("../data/es/dishes.csv")
 
-def set_text_value(widget: tk.Text, value: str) -> None:
-    widget.config(state="normal")
 
-    widget.delete("1.0", tk.END)
-    widget.insert(tk.END, value)
+def match_ingredients(stock, needed) -> (float, [str]):
+    count_needed = len(needed)
+    count_matched = 0
+    absent = []
 
-    widget.config(state="disabled")
+    for ingredient in needed:
+        matched = False
+        if ingredient in stock:
+            count_matched += 1
+            continue
+        else:
+            # для випадків, коли вписаний продукт не знайдено 1-1 в базі, бо там зберігається довша строка (з кількістю тощо)
+            for stocked in stock:
+                if stocked in ingredient:
+                    count_matched += 1
+                    matched = True
+                    break
+        if not matched:
+            absent.append(ingredient)
+
+    return count_matched / count_needed, absent
+
+def match_cooking_time(needed: int, provided: st.CookingTime) -> float:
+    return provided.to_seconds() / needed
+
+def match_recipes(
+        products_in_stock,
+        skill: st.CookingSkill,
+        time: st.CookingTime,
+        meal: st.Meal
+) -> ([st.FullMatch], [st.PartialMatch]):
+    full_matches, partial_matches = [], []
+
+    for row in DATA.iterrows():
+        full_match, partial_match = None, None
+        if not sufficient_skill(extract_skill(row), skill):
+            continue
+        if meal != st.Meal.UNIMPORTANT and extract_meal(row) != meal:
+            continue
+
+        match_percentage, absent = match_ingredients(products_in_stock, extract_ingredients(row))
+        time_coefficient = match_cooking_time(extract_time(row), time)
+
+        if time_coefficient > 1:
+            if time_coefficient > c.MAXIMUM_TIME_OVERHEAD:
+                continue
+            partial_match = st.PartialMatch(dish_from_row(row))
+            partial_match.insufficient_time()
+
+        if match_percentage < 1.0 or len(absent) > 0:
+            if partial_match is None:
+                partial_match = st.PartialMatch(dish_from_row(row))
+
+            partial_match.insufficient_ingredients(absent)
+
+        if partial_match is not None:
+            partial_matches.append(partial_match)
+        else:
+            full_matches.append(st.FullMatch(dish_from_row(row)))
+
+    return full_matches, partial_matches
+
+
+def compose_suggestion(full_matches: [st.FullMatch], partial_matches: [st.PartialMatch]) -> str:
+    suggestion = ""
+    if len(full_matches) > 0:
+        suggestion += "Ви можете приготувати:\n"
+    for m in full_matches:
+        suggestion += m.dish + "\n"
+
+    suggestion += "Можливо приготувати:\n"
+    for m in partial_matches:
+        if st.PartialMatchReason.NOT_ENOUGH_TIME in m.reasons:
+            suggestion += "Недостатньо часу\n"
+        if st.PartialMatchReason.NOT_ENOUGH_INGREDIENTS in m.reasons:
+            suggestion += f"Не вистачає інгредієнтів: {m.absent_ingredients.join(", ")}\n"
+
+        suggestion += m.dish + "\n"
+
+    return suggestion
 
 def suggest_the_dishes(form: st.InputForm):
-    pass
+    products_in_stock = form.ingredients.get("1.0", tk.END).strip().split(" ")
+    skill = st.CookingSkill.from_str(form.cooking_skills.get())
+    time = st.CookingTime.from_str(form.cooking_time.get())
+    meal = st.Meal.from_str(form.meal.get())
+
+    full_matches, partial_matches = match_recipes(products_in_stock, skill, time, meal)
+    suggestion = compose_suggestion(full_matches, partial_matches)
+
+    set_text_value(form.suggestions_field, suggestion)
 
 # UI
 def create_input_frame(container, form: st.InputForm):
@@ -27,29 +111,31 @@ def create_input_frame(container, form: st.InputForm):
     frame.columnconfigure(0, weight=2)
 
     # Введення наявних продуктів
-    ttk.Label(frame, text="Продукти в наявності *", font=FONT).grid(column=0, row=0, sticky=tk.W)
-    form.ingredients = tk.Text(frame, height=3, width=30, font=FONT, wrap="word")  # Wrap text by word
+    ttk.Label(frame, text="Продукти в наявності *", font=c.FONT).grid(column=0, row=0, sticky=tk.W)
+    form.ingredients = tk.Text(frame, height=3, width=30, font=c.FONT, wrap="word")  # Wrap text by word
     form.ingredients.grid(column=1, row=0, sticky=tk.EW)
     form.ingredients.focus()
 
-    ttk.Label(frame, text="Вміння кулінарії *", font=FONT).grid(column=0, row=1, sticky=tk.W)
+    ttk.Label(frame, text="Вміння кулінарії *", font=c.FONT).grid(column=0, row=1, sticky=tk.W)
     form.cooking_skills = tk.StringVar()
-    complexity_dropdown = ttk.Combobox(frame, values=COOKING_SKILL_OPTIONS, textvariable=form.cooking_skills, font=FONT, state="readonly")
-    complexity_dropdown.grid(column=1, row=2, sticky=tk.EW)
-    form.cooking_skills.set(COOKING_SKILL_OPTIONS[0])
+    skills_dropdown = ttk.Combobox(frame, values=c.COOKING_SKILL_OPTIONS, textvariable=form.cooking_skills, font=c.FONT,
+                                   state="readonly")
+    skills_dropdown.grid(column=1, row=1, sticky=tk.EW)
+    form.cooking_skills.set(c.COOKING_SKILL_OPTIONS[0])
 
-    ttk.Label(frame, text="Прийом їжі *", font=FONT).grid(column=0, row=2, sticky=tk.W)
+    ttk.Label(frame, text="Прийом їжі *", font=c.FONT).grid(column=0, row=2, sticky=tk.W)
     form.meal = tk.StringVar()
-    meal_dropdown = ttk.Combobox(frame, values=MEAL_OPTIONS, textvariable=form.meal, font=FONT, state="readonly")
-    meal_dropdown.grid(column=1, row=3, sticky=tk.EW)
-    form.meal.set(MEAL_OPTIONS[0])
+    meal_dropdown = ttk.Combobox(frame, values=c.MEAL_OPTIONS, textvariable=form.meal, font=c.FONT, state="readonly")
+    meal_dropdown.grid(column=1, row=2, sticky=tk.EW)
+    form.meal.set(c.MEAL_OPTIONS[0])
 
     # Вибір часу, який готові витратити на приготування
-    ttk.Label(frame, text="Час на приготування", font=FONT).grid(column=0, row=3, sticky=tk.W)
+    ttk.Label(frame, text="Час на приготування", font=c.FONT).grid(column=0, row=3, sticky=tk.W)
     form.cooking_time = tk.StringVar()
-    cooking_time_dropdown = ttk.Combobox(frame, values=COOKING_TIME_OPTIONS, textvariable=form.cooking_time, font=FONT, state="readonly")
-    cooking_time_dropdown.grid(column=1, row=1, sticky=tk.EW)
-    form.cooking_time.set(COOKING_TIME_OPTIONS[0])
+    cooking_time_dropdown = ttk.Combobox(frame, values=c.COOKING_TIME_OPTIONS, textvariable=form.cooking_time,
+                                         font=c.FONT, state="readonly")
+    cooking_time_dropdown.grid(column=1, row=3, sticky=tk.EW)
+    form.cooking_time.set(c.COOKING_TIME_OPTIONS[0])
 
     for widget in frame.winfo_children():
         widget.grid(padx=5, pady=5)
@@ -70,7 +156,7 @@ def init_main_window():
     form.suggestions_field = tk.Text(window, font=("Arial", 14), wrap="word", state="disabled")
     form.suggestions_field.grid(column=0, row=2, sticky=tk.EW, pady=10, padx=5)
 
-    search_button = tk.Button(window, text="Пошук", font=FONT, background="lightgreen", command=lambda: suggest_the_dishes(form))
+    search_button = tk.Button(window, text="Пошук", font=c.FONT, background="lightgreen", command=lambda: suggest_the_dishes(form))
     search_button.grid(column=0, row=1, sticky=tk.W, padx=5, pady=5)
 
     window.mainloop()
