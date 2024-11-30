@@ -14,7 +14,7 @@ def sufficient_skill(needed, actual) -> bool:
     return actual >= needed
 
 def extract_ingredients(row) -> [str]:
-    return row[c.DATA_COL_INGREDIENTS]
+    return tuple(row[c.DATA_COL_INGREDIENTS].split(", "))
 
 def extract_skill(row) -> st.CookingSkill:
     return st.CookingSkill.from_str(row[c.DATA_COL_SKILL])
@@ -23,7 +23,7 @@ def extract_meal(row) -> st.Meal:
     return st.Meal.from_str(row[c.DATA_COL_MEAL])
 
 def extract_time(row) -> int:
-    return row[c.DATA_COL_COOKING_TIME]
+    return int(row[c.DATA_COL_COOKING_TIME])
 
 def extract_name(row) -> str:
     return row[c.DATA_COL_NAME]

@@ -30,10 +30,12 @@ def match_ingredients(stock, needed) -> (float, [str]):
         if not matched:
             absent.append(ingredient)
 
-    return count_matched / count_needed, absent
+    return count_matched / count_needed if len(absent) > 0 else 999, absent
 
-def match_cooking_time(needed: int, provided: st.CookingTime) -> float:
-    return provided.to_seconds() / needed
+def time_overhead(provided: st.CookingTime, needed: int) -> float:
+    if provided == st.CookingTime.UNIMPORTANT:
+        return -1
+    return needed / provided.to_seconds()
 
 def match_recipes(
         products_in_stock,
@@ -43,7 +45,7 @@ def match_recipes(
 ) -> ([st.FullMatch], [st.PartialMatch]):
     full_matches, partial_matches = [], []
 
-    for row in DATA.iterrows():
+    for index, row in DATA.iterrows():
         full_match, partial_match = None, None
         if not sufficient_skill(extract_skill(row), skill):
             continue
@@ -51,7 +53,7 @@ def match_recipes(
             continue
 
         match_percentage, absent = match_ingredients(products_in_stock, extract_ingredients(row))
-        time_coefficient = match_cooking_time(extract_time(row), time)
+        time_coefficient = time_overhead(time, extract_time(row))
 
         if time_coefficient > 1:
             if time_coefficient > c.MAXIMUM_TIME_OVERHEAD:
@@ -59,10 +61,11 @@ def match_recipes(
             partial_match = st.PartialMatch(dish_from_row(row))
             partial_match.insufficient_time()
 
-        if match_percentage < 1.0 or len(absent) > 0:
+        if 1.0 > match_percentage:
+            if match_percentage > c.MINIMUM_INGREDIENTS_MATCH:
+                continue
             if partial_match is None:
                 partial_match = st.PartialMatch(dish_from_row(row))
-
             partial_match.insufficient_ingredients(absent)
 
         if partial_match is not None:
@@ -74,25 +77,27 @@ def match_recipes(
 
 
 def compose_suggestion(full_matches: [st.FullMatch], partial_matches: [st.PartialMatch]) -> str:
-    suggestion = ""
+    suggestion_parts: [str] = []
     if len(full_matches) > 0:
-        suggestion += "Ви можете приготувати:\n"
-    for m in full_matches:
-        suggestion += m.dish + "\n"
+        suggestion_parts.append("=== Приготуйте просто зараз ===\n")
+        for m in full_matches:
+            suggestion_parts.append(f"{m.dish}\n\n")
 
-    suggestion += "Можливо приготувати:\n"
-    for m in partial_matches:
-        if st.PartialMatchReason.NOT_ENOUGH_TIME in m.reasons:
-            suggestion += "Недостатньо часу\n"
-        if st.PartialMatchReason.NOT_ENOUGH_INGREDIENTS in m.reasons:
-            suggestion += f"Не вистачає інгредієнтів: {m.absent_ingredients.join(", ")}\n"
+    if len(partial_matches) > 0:
+        suggestion_parts.append("=== Можливо приготувати ===\n")
+        for m in partial_matches:
+            suggestion_parts.append(f"{m.dish}\n")
 
-        suggestion += m.dish + "\n"
+            if st.PartialMatchReason.NOT_ENOUGH_TIME in m.reasons:
+                suggestion_parts.append("- ! Недостатньо часу\n")
+            if st.PartialMatchReason.NOT_ENOUGH_INGREDIENTS in m.reasons:
+                suggestion_parts.append(f"- ! Не вистачає інгредієнтів: {", ".join(m.absent_ingredients)}\n")
+            suggestion_parts.append("\n")
 
-    return suggestion
+    return "".join(suggestion_parts)
 
 def suggest_the_dishes(form: st.InputForm):
-    products_in_stock = form.ingredients.get("1.0", tk.END).strip().split(" ")
+    products_in_stock = form.ingredients.get("1.0", tk.END).strip().split(", ")
     skill = st.CookingSkill.from_str(form.cooking_skills.get())
     time = st.CookingTime.from_str(form.cooking_time.get())
     meal = st.Meal.from_str(form.meal.get())
@@ -114,7 +119,6 @@ def create_input_frame(container, form: st.InputForm):
     ttk.Label(frame, text="Продукти в наявності *", font=c.FONT).grid(column=0, row=0, sticky=tk.W)
     form.ingredients = tk.Text(frame, height=3, width=30, font=c.FONT, wrap="word")  # Wrap text by word
     form.ingredients.grid(column=1, row=0, sticky=tk.EW)
-    form.ingredients.focus()
 
     ttk.Label(frame, text="Вміння кулінарії *", font=c.FONT).grid(column=0, row=1, sticky=tk.W)
     form.cooking_skills = tk.StringVar()
@@ -152,6 +156,18 @@ def init_main_window():
 
     input_frame = create_input_frame(window, form)
     input_frame.grid(column=0, row=0, sticky=tk.EW)
+
+    # Bind paste event
+    def paste(event=None):
+        try:
+            clipboard_content = window.clipboard_get()
+            form.ingredients.insert(tk.INSERT, clipboard_content)
+        except tk.TclError:
+            print("No content in clipboard to paste.")
+
+    # Add binding for Ctrl+V or Cmd+V
+    form.ingredients.bind("<Control-v>", paste)  # For Windows/Linux
+    form.ingredients.bind("<Command-v>", paste)  # For macOS
 
     form.suggestions_field = tk.Text(window, font=("Arial", 14), wrap="word", state="disabled")
     form.suggestions_field.grid(column=0, row=2, sticky=tk.EW, pady=10, padx=5)

@@ -15,7 +15,7 @@ class ExtendedEnum(Enum):
     @classmethod
     def from_str(cls, value):
         for item in cls:
-            if item.value == value:
+            if item.value.lower() == value.lower():
                 return item
         raise ValueError(f"'{value}' is not a valid {cls} value")
 
@@ -97,12 +97,12 @@ class Dish:
         self.recipe = recipe
 
     def __str__(self):
-        return f"""\"{self.name}\" ({self.meal})
+        return f"""\"{self.name}\" ({self.meal.value})
 {self.description}
-Інгредієнти: {self.ingredients.join(", ")}.
+Інгредієнти: {", ".join(self.ingredients)}.
 Рецепт: {self.recipe}
-Час приготування: {(self.time_to_cook * SECONDS_IN_MINUTE):.1f}
-Рівень: {self.skill}"""
+Час приготування: {(self.time_to_cook / SECONDS_IN_MINUTE):.1f} хвилин
+Рівень: {self.skill.value}"""
 
 class FullMatch:
     def __init__(self, dish: Dish):
