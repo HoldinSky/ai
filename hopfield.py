@@ -1,85 +1,46 @@
-import os
-from PIL import Image
-import sys
-import bson
-import pymongo
 import numpy as np
-from pymongo.synchronous.database import Database
+import tkinter as tk
+from tkinter import messagebox
+from enum import Enum
 
-CLEAR_COLLECTIONS_FLAG = False
-TRAIN_FLAG = False
-SETUP_FLAG = False
-TEST_FLAG = False
-N = 10
+SIZE = 10
+PIXEL_SIZE = 20
+MAX_ETALON_COUNT = 5
+FONT = ("Arial", 16)
 
+ETALONS = {"n": np.array([[1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1,  1,  1,  1,  1,  1,  1, 1, 1],
+                 [1, 1,  1,  1,  1,  1,  1,  1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1]]),
 
-class Block:
-    def __init__(self, collection):
-        self._collection = collection
+           "f": np.array([[-1, -1, -1, -1, 1, 1, -1, -1, -1, -1],
+                 [-1, -1,  1,  1, 1, 1,  1,  1, -1, -1],
+                 [-1,  1,  1, -1, 1, 1, -1,  1,  1, -1],
+                 [ 1,  1, -1, -1, 1, 1, -1, -1,  1,  1],
+                 [ 1, -1, -1, -1, 1, 1, -1, -1, -1,  1],
+                 [ 1, -1, -1, -1, 1, 1, -1, -1, -1,  1],
+                 [ 1,  1, -1, -1, 1, 1, -1, -1,  1,  1],
+                 [-1,  1,  1, -1, 1, 1, -1,  1,  1, -1],
+                 [-1, -1,  1,  1, 1, 1,  1,  1, -1, -1],
+                 [-1, -1, -1, -1, 1, 1, -1, -1, -1, -1]]),
 
-    def add(self, data_vector, association=None):
-        block = {
-            "data": data_vector
-        }
-        if association is not None:
-            block["association"] = association
-
-        self._collection.insert_one(block)
-
-    def find_all(self):
-        return self._collection.find({})
-
-    def find_by_id(self, block_id):
-        return self._collection.find_one({"_id": bson.ObjectId(block_id)})
-
-    def find_one(self):
-        return self._collection.find_one()
-
-
-class Weight:
-    def __init__(self, collection):
-        self._collection = collection
-
-    def adjust(self, old_data, data):
-        weights = {
-            "data": data
-        }
-
-        present = self._collection.find_one({"data": old_data})
-        if present is None:
-            self._collection.insert_one(weights)
-        else:
-            self._collection.replace_one(present, weights)
-
-    def add(self, data):
-        weights = {
-            "data": data
-        }
-
-        self._collection.insert_one(weights)
-
-    def find_one(self):
-        return self._collection.find_one()
-
-
-def train(db: Database):
-    blocks = Block(db.get_collection("blocks"))
-    weights = Weight(db.get_collection("weights"))
-
-    block_arr = blocks.find_all().to_list()
-    weights_arr = np.zeros((N*N, N*N))
-
-    for b in block_arr:
-        data = b["data"]
-
-        input_x = np.array([int(el) for el in data]).reshape(-1, 1)
-        weights_arr += input_x @ input_x.T
-
-    for i in range(len(weights_arr)):
-        weights_arr[i][i] = 0
-
-    weights.add(weights_arr.tolist())
-
+           "u": np.array([[1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1,  1, 1, 1],
+                 [1, 1, -1, -1, -1, -1,  1,  1, 1, 1],
+                 [1, 1, -1, -1, -1,  1,  1, -1, 1, 1],
+                 [1, 1, -1, -1,  1,  1, -1, -1, 1, 1],
+                 [1, 1, -1,  1,  1, -1, -1, -1, 1, 1],
+                 [1, 1,  1,  1, -1, -1, -1, -1, 1, 1],
+                 [1, 1,  1, -1, -1, -1, -1, -1, 1, 1],
+                 [1, 1, -1, -1, -1, -1, -1, -1, 1, 1]])
+           }
 
 def recognize(data, weights_collection):
     weights = np.array(weights_collection.find_one().get("data"))
@@ -89,75 +50,182 @@ def recognize(data, weights_collection):
 
     return np.where(answer > 0, 1, -1).flatten()
 
+class Color(Enum):
+    WHITE = "white"
+    BLACK = "black"
 
-def setup_collections(db: Database):
-    for name in db.list_collection_names():
-        db[name].drop()
+def dangerous_draw(canvas, x, y, color=Color.BLACK, outline=Color.BLACK):
+    x_start, y_start = x * PIXEL_SIZE, y * PIXEL_SIZE
+    x_end, y_end = x_start + PIXEL_SIZE, y_start + PIXEL_SIZE
+    canvas.create_rectangle(x_start, y_start, x_end, y_end, fill=color.name, outline=outline.name)
 
-    db.create_collection("blocks")
-    db.create_collection("weights")
+def draw(canvas, x, y, color=Color.BLACK, outline=Color.BLACK):
+    if x >= SIZE or x < 0 or y >= SIZE or y < 0:
+        return
+    dangerous_draw(canvas, x, y, color, outline)
 
-def clear_collections(db: Database):
-    collection = db.get_collection("blocks")
-    collection.delete_many({})
+def clear(canvas, outline=Color.BLACK):
+    for i in range(SIZE):
+        for j in range(SIZE):
+            draw(canvas, i, j, Color.WHITE, outline)
 
-    collection = db.get_collection("weights")
-    collection.delete_many({})
+class Etalon:
+    def __init__(self, canvas: tk.Canvas):
+        self.canvas = canvas
+        self.pixels = np.zeros((SIZE, SIZE))
 
-def upload_etalons(db: Database):
-    data_dir = ".\\data\\lab2\\train"
-    block = Block(db.get_collection("blocks"))
+    def draw(self, x, y, color: Color):
+        draw(self.canvas, x, y, color, Color.WHITE)
+        self.pixels[y, x] = color == Color.BLACK
 
-    for img_name in os.listdir(data_dir):
-        vector = img_to_vector(f"{data_dir}\\{img_name}")
-        block.add(vector, img_name.split(".")[0])
+    def clear(self):
+        clear(self.canvas, Color.WHITE)
+        self.pixels = np.zeros((SIZE, SIZE))
 
-def img_to_vector(img_path):
-    img_arr = np.asarray(Image.open(img_path))
-    img_shape = img_arr.shape
+class HopfieldNetwork(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Мережа Хопфілда")
+        self.geometry("1150x600")
+        self.resizable(width=False, height=False)
 
-    vector = []
+        self.filled_etalon_count = 0
+        self.weights = np.zeros((SIZE * SIZE, SIZE * SIZE), dtype=float)
+        self.drawing_grid = np.zeros((SIZE, SIZE))
 
-    for i in range(img_shape[0]):
-        for ii in range(img_shape[1]):
-            if img_arr[i][ii][0] == 0:
-                vector.append(1)
-            else:
-                vector.append(-1)
+        self._setup_drawing_frame()
+        self._setup_etalons_frame()
+        self._setup_buttons_frame()
 
-    return vector
+    def _setup_drawing_frame(self):
+        # Основна область для малювання та відображення рисунків
+        main_frame = tk.Frame(self)
+        main_frame.pack()
 
-def test(db: Database):
-    test_data = img_to_vector(".\\data\\lab2\\test\\f-bad.png")
+        tk.Label(main_frame, text="Малювати тут", font=FONT).grid(row=0, column=0, padx=10, pady=5)
+        tk.Label(main_frame, text="Результат", font=FONT).grid(row=0, column=1, padx=10, pady=5)
+        self.canvas = tk.Canvas(main_frame, width=SIZE * PIXEL_SIZE - 1, height=SIZE * PIXEL_SIZE - 1, bg="white",
+                                relief="solid")
+        self.canvas.grid(row=1, column=0)
 
-    res = recognize(test_data, db.get_collection("weights"))
-    return res.reshape((10, 10))
+        self.recognition_canvas = tk.Canvas(main_frame, width=SIZE * PIXEL_SIZE - 1, height=SIZE * PIXEL_SIZE - 1,
+                                            bg="white", relief="solid")
+        self.recognition_canvas.grid(row=1, column=1, padx=10)
+        self._create_drawing_grid()
 
-def parse_args():
-    global CLEAR_COLLECTIONS_FLAG, TRAIN_FLAG, SETUP_FLAG, TEST_FLAG
-    CLEAR_COLLECTIONS_FLAG = "--clear" in sys.argv
-    TRAIN_FLAG = "--train" in sys.argv
-    SETUP_FLAG = "--setup" in sys.argv
-    TEST_FLAG = "--test" in sys.argv
+        self.canvas.bind("<Button-1>", self._draw_black)
+        self.canvas.bind("<B1-Motion>", self._draw_black)
+        self.canvas.bind("<Button-3>", self._draw_white)
+        self.canvas.bind("<B3-Motion>", self._draw_white)
+
+    def _setup_etalons_frame(self):
+        # Зона з еталонами, які не можна редагувати
+        etalon_frame = tk.Frame(self, height=SIZE * PIXEL_SIZE)
+        etalon_frame.pack(pady=20)
+
+        tk.Label(etalon_frame, text="Еталони", font=FONT).grid(row=0, column=2, padx=10, pady=5)
+
+        self.etalons = []
+        for i in range(MAX_ETALON_COUNT):
+            canvas = tk.Canvas(etalon_frame, width=SIZE * PIXEL_SIZE - 1, height=SIZE * PIXEL_SIZE - 1, bg="white",
+                               relief="solid")
+            canvas.grid(row=1, column=i, padx=10)
+            self.etalons.append(Etalon(canvas))
+
+        for etalon in ETALONS.values():
+            self._draw_etalon(etalon)
+            self._train(etalon)
+
+    def _setup_buttons_frame(self):
+        button_frame = tk.Frame(self)
+        button_frame.pack(pady=10)
+        tk.Button(button_frame, text="Додати еталон", font=FONT, command=self._add_etalon).grid(row=0, column=0, padx=5)
+        tk.Button(button_frame, text="Розпізнати", font=FONT, command=self._recognize).grid(row=0, column=1, padx=5)
+        tk.Button(button_frame, text="Очистити поле", font=FONT, command=self._clear_drawing).grid(row=0, column=3, padx=5)
+        tk.Button(button_frame, text="Очистити еталони", font=FONT, bg="red", activebackground="darkred", fg="white",
+                  activeforeground="white", command=self._clear_etalons).grid(row=0, column=4, padx=5)
+
+    def _add_etalon(self):
+        self._draw_etalon(self.drawing_grid)
+        self._train(self.drawing_grid)
+
+    def _retrain_all(self):
+        for etalon in ETALONS.values():
+            self._train(etalon)
+        self.weights /= SIZE
+
+    def _train(self, pattern):
+        flat_pattern = pattern.flatten()
+        self.weights += np.outer(flat_pattern, flat_pattern) / len(flat_pattern)
+        np.fill_diagonal(self.weights, 0)
+
+    def _recognize(self, max_iterations=100):
+        flat_pattern = self.drawing_grid.flatten()
+        for _ in range(max_iterations):
+            updated_pattern = np.sign(self.weights @ flat_pattern)
+            updated_pattern[updated_pattern == 0] = -1
+            if np.array_equal(flat_pattern, updated_pattern):
+                break
+            flat_pattern = updated_pattern
+
+        answer = flat_pattern.reshape(self.drawing_grid.shape)
+        self._draw_grid(self.recognition_canvas, answer)
+
+    def _draw_etalon(self, etalon):
+        if self.filled_etalon_count >= MAX_ETALON_COUNT:
+            messagebox.showerror("Помилка", "Максимальна кількість еталонів!")
+            return
+
+        self._draw_grid(self.etalons[self.filled_etalon_count].canvas, etalon)
+
+        rows, cols = etalon.shape
+        for y in range(rows):
+            for x in range(cols):
+                self.etalons[self.filled_etalon_count].draw(x, y, Color.BLACK if etalon[y][x] > 0 else Color.WHITE)
+
+        self.filled_etalon_count += 1
+
+    def _draw_grid(self, canvas, grid):
+        shape = grid.shape
+        if shape[0] > SIZE or shape[1] > SIZE:
+            messagebox.showerror("Помилка", "Спроба намалювати рисунок більший за площину!")
+            return
+
+        for y in range(shape[0]):
+            for x in range(shape[1]):
+                draw(canvas, x, y, Color.BLACK if grid[y][x] > 0 else Color.WHITE)
+
+    def _create_drawing_grid(self):
+        for i in range(SIZE):
+            for j in range(SIZE):
+                draw(self.canvas, i, j, Color.WHITE)
+
+    def _draw_black(self, event):
+        self._draw_on_canvas(event, Color.BLACK)
+
+    def _draw_white(self, event):
+        self._draw_on_canvas(event, Color.WHITE)
+
+    def _draw_on_canvas(self, event, color: Color):
+        # Знайти координати пікселя
+        x, y = event.x // PIXEL_SIZE, event.y // PIXEL_SIZE
+        if x >= SIZE or x < 0 or y >= SIZE or y < 0:
+            return
+
+        dangerous_draw(self.canvas, x, y, color)
+        self.drawing_grid[y][x] = color == Color.BLACK
+
+    def _clear_etalons(self):
+        for etalon in self.etalons:
+            etalon.clear()
+        self.filled_etalon_count = 0
+        self.weights = np.zeros((SIZE * SIZE, SIZE * SIZE))
+
+    def _clear_drawing(self):
+        self.drawing_grid = np.zeros((SIZE, SIZE))
+        clear(self.canvas)
+
 
 if __name__ == "__main__":
-    parse_args()
-    client = pymongo.MongoClient('localhost', 27017)
-    db = client["ai_lab2"]
-
-    try:
-        if SETUP_FLAG:
-            setup_collections(db)
-            clear_collections(db)
-            upload_etalons(db)
-        if TRAIN_FLAG:
-            train(db)
-        if TEST_FLAG:
-            output = test(db)
-
-            img_data = np.where(output == 1, 0, 255).astype(np.uint8)
-            img = Image.fromarray(img_data, mode="L")
-            img.save(".\\data\\lab2\\test\\recognized.png")
-
-    finally:
-        client.close()
+    network = HopfieldNetwork()
+    network.mainloop()
