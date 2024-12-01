@@ -13,11 +13,15 @@ class ExtendedEnum(Enum):
         return tuple(map(lambda x: x.value, cls))
 
     @classmethod
+    def names(cls):
+        return tuple(map(lambda x: x.name, cls))
+
+    @classmethod
     def from_str(cls, value):
         for item in cls:
             if item.value.lower() == value.lower():
                 return item
-        raise ValueError(f"'{value}' is not a valid {cls} value")
+        raise ValueError(f"'{value.name}' is not a valid {cls} value")
 
     def __gt__(self, other):
         return self.values().index(self.value) > self.values().index(other.value)
@@ -65,8 +69,24 @@ class CookingSkill(ExtendedEnum):
 
 
 class PartialMatchReason(ExtendedEnum):
-    NOT_ENOUGH_INGREDIENTS = "Не вистачає інгредієнтів"
-    NOT_ENOUGH_TIME = "Не вистачає часу"
+    INSUFFICIENT_INGREDIENTS = "Не вистачає інгредієнтів"
+    INSUFFICIENT_TIME = "Не вистачає часу"
+    INSUFFICIENT_SKILL = "Може бути надто складно"
+
+class TextStyleTag(ExtendedEnum):
+    INSUFFICIENT_INGREDIENTS = 0
+    INSUFFICIENT_TIME = 1
+    INSUFFICIENT_SKILL = 2
+    FULL_MATCH = 3
+    PARTIAL_MATCH = 4
+    DELIMITER = 5
+
+    @classmethod
+    def from_match_reason(cls, reason: PartialMatchReason):
+        for item in cls:
+            if item.name == reason.name:
+                return item
+        raise ValueError(f"'{reason.name}' is not a valid {cls} value")
 
 
 # STRUCTURES and CLASSES
@@ -118,7 +138,10 @@ class PartialMatch:
 
     def insufficient_ingredients(self, absent_ingredients: [str]):
         self.absent_ingredients = absent_ingredients
-        self.reasons.add(PartialMatchReason.NOT_ENOUGH_INGREDIENTS)
+        self.reasons.add(PartialMatchReason.INSUFFICIENT_INGREDIENTS)
 
     def insufficient_time(self):
-        self.reasons.add(PartialMatchReason.NOT_ENOUGH_TIME)
+        self.reasons.add(PartialMatchReason.INSUFFICIENT_TIME)
+
+    def insufficient_skill(self):
+        self.reasons.add(PartialMatchReason.INSUFFICIENT_SKILL)
