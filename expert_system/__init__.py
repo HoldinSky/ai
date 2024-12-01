@@ -27,7 +27,7 @@ def match_ingredients(stock, needed) -> (float, [str]):
         else:
             # для випадків, коли вписаний продукт не знайдено 1-1 в базі, бо там зберігається довша строка (з кількістю тощо)
             for stocked in stock:
-                if stocked in ingredient:
+                if len(stocked) > 2 and stocked in ingredient:
                     count_matched += 1
                     matched = True
                     break
@@ -38,8 +38,6 @@ def match_ingredients(stock, needed) -> (float, [str]):
 
 
 def time_overhead(provided: st.CookingTime, needed: int) -> float:
-    if provided == st.CookingTime.UNIMPORTANT:
-        return -1
     return needed / provided.to_seconds()
 
 
@@ -87,19 +85,26 @@ def match_recipes(
 
 def fill_suggestion(field: tk.Text, full_matches: [st.FullMatch], partial_matches: [st.PartialMatch]):
     clear_text_value(field)
+    full_len, part_len = len(full_matches), len(partial_matches)
+
+    if full_len == part_len == 0:
+        append_text_with_style(field,
+                               "На жаль, не можу підібрати жодної страви за Вашими параметрами, спробуйте додати інгредієнтів.",
+                               [st.TextStyleTag.NO_MATCHES.name])
+        return
 
     if len(full_matches) > 0:
-        append_text_with_style(field, "=== Приготуйте просто зараз ===\n", [st.TextStyleTag.FULL_MATCH.name])
+        append_text_with_style(field, "=== Приготуйте просто зараз ===\n", [st.TextStyleTag.FULL_MATCH.name, st.TextStyleTag.CENTRALIZED.name])
 
         for m in full_matches:
             append_text_with_style(field, f"{m.dish}\n", [st.TextStyleTag.FULL_MATCH.name])
-
-    append_text(field, "\n")
+            append_text(field, "\n")
+        append_text(field, "\n")
 
     if len(partial_matches) <= 0:
         return
 
-    append_text_with_style(field, "=== Можливо приготувати ===\n", [st.TextStyleTag.PARTIAL_MATCH.name])
+    append_text_with_style(field, "=== Можливо приготувати ===\n", [st.TextStyleTag.PARTIAL_MATCH.name, st.TextStyleTag.CENTRALIZED.name])
 
     for m in partial_matches:
         append_text_with_style(field, f"{m.dish}\n", [st.TextStyleTag.PARTIAL_MATCH.name])
@@ -125,7 +130,7 @@ def fill_suggestion(field: tk.Text, full_matches: [st.FullMatch], partial_matche
 
 
 def suggest_the_dishes(form: st.InputForm):
-    products_in_stock = form.ingredients.get("1.0", tk.END).strip().split(", ")
+    products_in_stock = [x for x in form.ingredients.get("1.0", tk.END).strip().split(", ") if len(x) > 0]
     skill = st.CookingSkill.from_str(form.cooking_skills.get())
     time = st.CookingTime.from_str(form.cooking_time.get())
     meal = st.Meal.from_str(form.meal.get())
@@ -147,14 +152,14 @@ def create_input_frame(container, form: st.InputForm):
     form.ingredients = tk.Text(frame, height=3, width=30, font=c.FONT, wrap="word")  # Wrap text by word
     form.ingredients.grid(column=1, row=0, sticky=tk.EW)
 
-    ttk.Label(frame, text="Вміння кулінарії *", font=c.FONT).grid(column=0, row=1, sticky=tk.W)
+    ttk.Label(frame, text="Вміння кулінарії", font=c.FONT).grid(column=0, row=1, sticky=tk.W)
     form.cooking_skills = tk.StringVar()
     skills_dropdown = ttk.Combobox(frame, values=c.COOKING_SKILL_OPTIONS, textvariable=form.cooking_skills, font=c.FONT,
                                    state="readonly")
     skills_dropdown.grid(column=1, row=1, sticky=tk.EW)
     form.cooking_skills.set(c.COOKING_SKILL_OPTIONS[0])
 
-    ttk.Label(frame, text="Прийом їжі *", font=c.FONT).grid(column=0, row=2, sticky=tk.W)
+    ttk.Label(frame, text="Прийом їжі", font=c.FONT).grid(column=0, row=2, sticky=tk.W)
     form.meal = tk.StringVar()
     meal_dropdown = ttk.Combobox(frame, values=c.MEAL_OPTIONS, textvariable=form.meal, font=c.FONT, state="readonly")
     meal_dropdown.grid(column=1, row=2, sticky=tk.EW)

@@ -1,3 +1,4 @@
+import sys
 from enum import Enum
 import tkinter as tk
 from tkinter import ttk
@@ -37,7 +38,6 @@ class ExtendedEnum(Enum):
 
 
 class CookingTime(ExtendedEnum):
-    UNIMPORTANT = "Не важливо"
     FAST = "< 20 хвилин"
     MEDIUM = "20 хвилин - 1 година"
     MEDIUM_LONG = "1-2 години"
@@ -51,7 +51,7 @@ class CookingTime(ExtendedEnum):
         elif self == CookingTime.MEDIUM_LONG:
             return 2 * SECONDS_IN_HOUR
         else:
-            return 2 * SECONDS_IN_HOUR + 1
+            return sys.maxsize
 
 
 class Meal(ExtendedEnum):
@@ -80,13 +80,8 @@ class TextStyleTag(ExtendedEnum):
     FULL_MATCH = 3
     PARTIAL_MATCH = 4
     DELIMITER = 5
-
-    @classmethod
-    def from_match_reason(cls, reason: PartialMatchReason):
-        for item in cls:
-            if item.name == reason.name:
-                return item
-        raise ValueError(f"'{reason.name}' is not a valid {cls} value")
+    NO_MATCHES = 6
+    CENTRALIZED = 7
 
 
 # STRUCTURES and CLASSES

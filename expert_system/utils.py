@@ -40,6 +40,8 @@ def setup_tags_styles(widget: tk.Text):
     widget.tag_configure(st.TextStyleTag.INSUFFICIENT_TIME.name, foreground="#b51712")
 
     widget.tag_configure(st.TextStyleTag.DELIMITER.name, background="#0e5ab2")
+    widget.tag_configure(st.TextStyleTag.NO_MATCHES.name, foreground="#b51712")
+    widget.tag_configure(st.TextStyleTag.CENTRALIZED.name, justify=tk.CENTER)
 
 
 def sufficient_skill(needed, actual) -> bool:
